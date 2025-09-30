@@ -14,7 +14,217 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      mechanic_profiles: {
+        Row: {
+          created_at: string | null
+          experience_years: number | null
+          hourly_rate: number | null
+          id: string
+          is_verified: boolean | null
+          location_address: string | null
+          location_lat: number | null
+          location_lng: number | null
+          rating: number | null
+          service_radius: number | null
+          specializations: string[] | null
+          total_jobs: number | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          experience_years?: number | null
+          hourly_rate?: number | null
+          id?: string
+          is_verified?: boolean | null
+          location_address?: string | null
+          location_lat?: number | null
+          location_lng?: number | null
+          rating?: number | null
+          service_radius?: number | null
+          specializations?: string[] | null
+          total_jobs?: number | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          experience_years?: number | null
+          hourly_rate?: number | null
+          id?: string
+          is_verified?: boolean | null
+          location_address?: string | null
+          location_lat?: number | null
+          location_lng?: number | null
+          rating?: number | null
+          service_radius?: number | null
+          specializations?: string[] | null
+          total_jobs?: number | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mechanic_profiles_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          created_at: string | null
+          email: string
+          full_name: string
+          id: string
+          phone: string | null
+          updated_at: string | null
+          user_type: Database["public"]["Enums"]["user_type"]
+        }
+        Insert: {
+          created_at?: string | null
+          email: string
+          full_name: string
+          id: string
+          phone?: string | null
+          updated_at?: string | null
+          user_type: Database["public"]["Enums"]["user_type"]
+        }
+        Update: {
+          created_at?: string | null
+          email?: string
+          full_name?: string
+          id?: string
+          phone?: string | null
+          updated_at?: string | null
+          user_type?: Database["public"]["Enums"]["user_type"]
+        }
+        Relationships: []
+      }
+      service_requests: {
+        Row: {
+          assigned_mechanic_id: string | null
+          created_at: string | null
+          customer_id: string
+          description: string | null
+          estimated_cost: number | null
+          final_cost: number | null
+          id: string
+          location_address: string
+          location_lat: number | null
+          location_lng: number | null
+          service_type: string
+          status: string | null
+          updated_at: string | null
+          urgency_level: string | null
+          vehicle_type: string
+        }
+        Insert: {
+          assigned_mechanic_id?: string | null
+          created_at?: string | null
+          customer_id: string
+          description?: string | null
+          estimated_cost?: number | null
+          final_cost?: number | null
+          id?: string
+          location_address: string
+          location_lat?: number | null
+          location_lng?: number | null
+          service_type: string
+          status?: string | null
+          updated_at?: string | null
+          urgency_level?: string | null
+          vehicle_type: string
+        }
+        Update: {
+          assigned_mechanic_id?: string | null
+          created_at?: string | null
+          customer_id?: string
+          description?: string | null
+          estimated_cost?: number | null
+          final_cost?: number | null
+          id?: string
+          location_address?: string
+          location_lat?: number | null
+          location_lng?: number | null
+          service_type?: string
+          status?: string | null
+          updated_at?: string | null
+          urgency_level?: string | null
+          vehicle_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "service_requests_assigned_mechanic_id_fkey"
+            columns: ["assigned_mechanic_id"]
+            isOneToOne: false
+            referencedRelation: "mechanic_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "service_requests_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      store_profiles: {
+        Row: {
+          address: string
+          created_at: string | null
+          id: string
+          is_verified: boolean | null
+          location_lat: number | null
+          location_lng: number | null
+          opening_hours: Json | null
+          phone: string | null
+          rating: number | null
+          services_offered: string[] | null
+          store_name: string
+          store_type: string | null
+          user_id: string
+        }
+        Insert: {
+          address: string
+          created_at?: string | null
+          id?: string
+          is_verified?: boolean | null
+          location_lat?: number | null
+          location_lng?: number | null
+          opening_hours?: Json | null
+          phone?: string | null
+          rating?: number | null
+          services_offered?: string[] | null
+          store_name: string
+          store_type?: string | null
+          user_id: string
+        }
+        Update: {
+          address?: string
+          created_at?: string | null
+          id?: string
+          is_verified?: boolean | null
+          location_lat?: number | null
+          location_lng?: number | null
+          opening_hours?: Json | null
+          phone?: string | null
+          rating?: number | null
+          services_offered?: string[] | null
+          store_name?: string
+          store_type?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "store_profiles_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -23,7 +233,7 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      user_type: "customer" | "mechanic" | "store"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +360,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      user_type: ["customer", "mechanic", "store"],
+    },
   },
 } as const
