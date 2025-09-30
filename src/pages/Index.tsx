@@ -3,6 +3,7 @@ import HeroSection from "@/components/HeroSection";
 import VehicleServices from "@/components/VehicleServices";
 import FeaturesSection from "@/components/FeaturesSection";
 import CTASection from "@/components/CTASection";
+import Footer from "@/components/Footer";
 
 const Index = () => {
   return (
@@ -14,6 +15,7 @@ const Index = () => {
         <FeaturesSection />
         <CTASection />
       </main>
+      <Footer />
     </div>
   );
 };
