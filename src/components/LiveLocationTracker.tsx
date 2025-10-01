@@ -56,17 +56,26 @@ const LiveLocationTracker = ({ serviceRequestId, userRole, userId }: LiveLocatio
             if (map.current) {
               const marker = role === 'customer' ? customerMarker : mechanicMarker;
               const color = role === 'customer' ? '#3b82f6' : '#ef4444';
+              const label = role === 'customer' ? 'Customer Location' : 'Mechanic Location';
 
               if (marker.current) {
                 marker.current.setLngLat([lng, lat]);
               } else {
                 marker.current = new mapboxgl.Marker({ color })
                   .setLngLat([lng, lat])
-                  .setPopup(new mapboxgl.Popup().setHTML(`<p>${role === 'customer' ? 'Customer' : 'Mechanic'} Location</p>`))
+                  .setPopup(new mapboxgl.Popup().setHTML(`<p class="font-bold">${label}</p>`))
                   .addTo(map.current);
               }
 
-              map.current.flyTo({ center: [lng, lat], zoom: 14 });
+              // Fit bounds to show both markers if both exist
+              if (customerMarker.current && mechanicMarker.current) {
+                const bounds = new mapboxgl.LngLatBounds();
+                bounds.extend(customerMarker.current.getLngLat());
+                bounds.extend(mechanicMarker.current.getLngLat());
+                map.current.fitBounds(bounds, { padding: 100, maxZoom: 14 });
+              } else {
+                map.current.flyTo({ center: [lng, lat], zoom: 14 });
+              }
             }
           }
         }
@@ -106,17 +115,26 @@ const LiveLocationTracker = ({ serviceRequestId, userRole, userId }: LiveLocatio
         if (map.current) {
           const marker = userRole === 'customer' ? customerMarker : mechanicMarker;
           const color = userRole === 'customer' ? '#3b82f6' : '#ef4444';
+          const label = userRole === 'customer' ? 'Your Location (Customer)' : 'Your Location (Mechanic)';
 
           if (marker.current) {
             marker.current.setLngLat([longitude, latitude]);
           } else {
             marker.current = new mapboxgl.Marker({ color })
               .setLngLat([longitude, latitude])
-              .setPopup(new mapboxgl.Popup().setHTML('<p>Your Location</p>'))
+              .setPopup(new mapboxgl.Popup().setHTML(`<p class="font-bold">${label}</p>`))
               .addTo(map.current);
           }
 
-          map.current.flyTo({ center: [longitude, latitude], zoom: 14 });
+          // Fit bounds to show both markers if both exist
+          if (customerMarker.current && mechanicMarker.current) {
+            const bounds = new mapboxgl.LngLatBounds();
+            bounds.extend(customerMarker.current.getLngLat());
+            bounds.extend(mechanicMarker.current.getLngLat());
+            map.current.fitBounds(bounds, { padding: 100, maxZoom: 14 });
+          } else {
+            map.current.flyTo({ center: [longitude, latitude], zoom: 14 });
+          }
         }
 
         setIsSharing(true);
@@ -131,8 +149,8 @@ const LiveLocationTracker = ({ serviceRequestId, userRole, userId }: LiveLocatio
       },
       {
         enableHighAccuracy: true,
-        maximumAge: 10000,
-        timeout: 5000,
+        maximumAge: 5000,
+        timeout: 10000,
       }
     );
   };

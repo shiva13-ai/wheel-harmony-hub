@@ -7,6 +7,8 @@ import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import Auth from "./pages/Auth";
 import TrackService from "./pages/TrackService";
+import MechanicDashboard from "./pages/MechanicDashboard";
+import CustomerDashboard from "./pages/CustomerDashboard";
 
 const queryClient = new QueryClient();
 
@@ -21,6 +23,8 @@ const App = () => (
           <Route path="/" element={<Index />} />
           <Route path="/auth" element={<Auth />} />
           <Route path="/track/:requestId" element={<TrackService />} />
+          <Route path="/mechanic-dashboard" element={<MechanicDashboard />} />
+          <Route path="/customer-dashboard" element={<CustomerDashboard />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

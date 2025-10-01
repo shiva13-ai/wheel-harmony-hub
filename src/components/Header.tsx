@@ -61,9 +61,12 @@ const Header = () => {
           <div className="flex items-center gap-3">
             {user ? (
               <>
-                <span className="text-sm text-muted-foreground hidden sm:inline">
-                  {user.email}
-                </span>
+                <Button variant="ghost" size="sm" onClick={() => navigate('/customer-dashboard')}>
+                  My Requests
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => navigate('/mechanic-dashboard')}>
+                  Mechanic
+                </Button>
                 <Button variant="ghost" size="sm" onClick={handleSignOut}>
                   <LogOut className="w-4 h-4" />
                   Sign Out
