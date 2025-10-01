@@ -12,6 +12,7 @@ import { Bike, Car, Truck, Wrench, ArrowRight } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { z } from "zod";
+import LocationMap from "./LocationMap";
 
 const serviceRequestSchema = z.object({
   vehicleType: z.string().min(1, "Please select a vehicle type"),
@@ -34,6 +35,8 @@ const VehicleServices = () => {
   const [serviceType, setServiceType] = useState("");
   const [description, setDescription] = useState("");
   const [locationAddress, setLocationAddress] = useState("");
+  const [locationLat, setLocationLat] = useState<number | null>(null);
+  const [locationLng, setLocationLng] = useState<number | null>(null);
   const [urgencyLevel, setUrgencyLevel] = useState<'low' | 'normal' | 'high' | 'emergency'>('normal');
 
   useEffect(() => {
@@ -83,6 +86,8 @@ const VehicleServices = () => {
         service_type: validated.serviceType,
         description: validated.description,
         location_address: validated.locationAddress,
+        location_lat: locationLat,
+        location_lng: locationLng,
         urgency_level: validated.urgencyLevel,
         status: 'pending',
       });
@@ -100,6 +105,8 @@ const VehicleServices = () => {
       setServiceType("");
       setDescription("");
       setLocationAddress("");
+      setLocationLat(null);
+      setLocationLng(null);
       setUrgencyLevel('normal');
     } catch (error: any) {
       toast({
@@ -262,6 +269,18 @@ const VehicleServices = () => {
                 onChange={(e) => setLocationAddress(e.target.value)}
                 placeholder="Your address or location"
                 required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Select Location on Map</Label>
+              <LocationMap
+                onLocationSelect={(lat, lng, address) => {
+                  setLocationLat(lat);
+                  setLocationLng(lng);
+                  setLocationAddress(address);
+                }}
+                initialLat={locationLat || undefined}
+                initialLng={locationLng || undefined}
               />
             </div>
             <div className="space-y-2">
