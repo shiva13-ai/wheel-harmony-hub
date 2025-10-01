@@ -10,6 +10,7 @@ import TrackService from "./pages/TrackService";
 
 const queryClient = new QueryClient();
 
+// App with routing for service tracking
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
