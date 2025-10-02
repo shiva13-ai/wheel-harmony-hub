@@ -6,6 +6,8 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Clock, Navigation, TrendingUp } from 'lucide-react';
+import { animateMarker, fetchETA, formatDuration, formatDistance } from '@/utils/mapHelpers';
 
 interface LiveLocationTrackerProps {
   serviceRequestId: string;
@@ -17,11 +19,15 @@ const LiveLocationTracker = ({ serviceRequestId, userRole, userId }: LiveLocatio
   const { toast } = useToast();
   const [isSharing, setIsSharing] = useState(false);
   const [otherUserLocation, setOtherUserLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [eta, setEta] = useState<{ duration: number; distance: number } | null>(null);
+  const [myLocation, setMyLocation] = useState<{ lat: number; lng: number } | null>(null);
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const customerMarker = useRef<mapboxgl.Marker | null>(null);
   const mechanicMarker = useRef<mapboxgl.Marker | null>(null);
   const watchId = useRef<number | null>(null);
+  const etaInterval = useRef<NodeJS.Timeout | null>(null);
+  const lastMarkerPosition = useRef<{ customer?: [number, number]; mechanic?: [number, number] }>({});
   const mapboxToken = localStorage.getItem('mapbox_token') || '';
 
   useEffect(() => {
@@ -43,6 +49,39 @@ const LiveLocationTracker = ({ serviceRequestId, userRole, userId }: LiveLocatio
     };
   }, [mapboxToken]);
 
+  // Calculate ETA periodically
+  useEffect(() => {
+    const calculateETA = async () => {
+      if (!myLocation || !otherUserLocation || !mapboxToken) return;
+
+      // For customer: mechanic location to customer location
+      // For mechanic: mechanic location to customer location
+      const result = await fetchETA(
+        mapboxToken,
+        userRole === 'customer' ? otherUserLocation.lng : myLocation.lng,
+        userRole === 'customer' ? otherUserLocation.lat : myLocation.lat,
+        userRole === 'customer' ? myLocation.lng : otherUserLocation.lng,
+        userRole === 'customer' ? myLocation.lat : otherUserLocation.lat
+      );
+
+      if (result) {
+        setEta(result);
+      }
+    };
+
+    if (myLocation && otherUserLocation) {
+      calculateETA();
+      // Update ETA every 15 seconds
+      etaInterval.current = setInterval(calculateETA, 15000);
+    }
+
+    return () => {
+      if (etaInterval.current) {
+        clearInterval(etaInterval.current);
+      }
+    };
+  }, [myLocation, otherUserLocation, mapboxToken, userRole]);
+
   useEffect(() => {
     const channel = supabase.channel(`location:${serviceRequestId}`)
       .on(
@@ -55,26 +94,34 @@ const LiveLocationTracker = ({ serviceRequestId, userRole, userId }: LiveLocatio
 
             if (map.current) {
               const marker = role === 'customer' ? customerMarker : mechanicMarker;
+              const markerKey = role as 'customer' | 'mechanic';
               const color = role === 'customer' ? '#3b82f6' : '#ef4444';
               const label = role === 'customer' ? 'Customer Location' : 'Mechanic Location';
+              const newPosition: [number, number] = [lng, lat];
 
               if (marker.current) {
-                marker.current.setLngLat([lng, lat]);
+                // Smooth animation from last position to new position
+                const lastPos = lastMarkerPosition.current[markerKey];
+                if (lastPos) {
+                  animateMarker(marker.current, lastPos, newPosition, 2000);
+                } else {
+                  marker.current.setLngLat(newPosition);
+                }
               } else {
                 marker.current = new mapboxgl.Marker({ color })
-                  .setLngLat([lng, lat])
+                  .setLngLat(newPosition)
                   .setPopup(new mapboxgl.Popup().setHTML(`<p class="font-bold">${label}</p>`))
                   .addTo(map.current);
               }
+
+              lastMarkerPosition.current[markerKey] = newPosition;
 
               // Fit bounds to show both markers if both exist
               if (customerMarker.current && mechanicMarker.current) {
                 const bounds = new mapboxgl.LngLatBounds();
                 bounds.extend(customerMarker.current.getLngLat());
                 bounds.extend(mechanicMarker.current.getLngLat());
-                map.current.fitBounds(bounds, { padding: 100, maxZoom: 14 });
-              } else {
-                map.current.flyTo({ center: [lng, lat], zoom: 14 });
+                map.current.fitBounds(bounds, { padding: 100, maxZoom: 15 });
               }
             }
           }
@@ -100,6 +147,8 @@ const LiveLocationTracker = ({ serviceRequestId, userRole, userId }: LiveLocatio
     watchId.current = navigator.geolocation.watchPosition(
       async (position) => {
         const { latitude, longitude } = position.coords;
+        
+        setMyLocation({ lat: latitude, lng: longitude });
 
         await supabase.channel(`location:${serviceRequestId}`).send({
           type: 'broadcast',
@@ -114,24 +163,34 @@ const LiveLocationTracker = ({ serviceRequestId, userRole, userId }: LiveLocatio
 
         if (map.current) {
           const marker = userRole === 'customer' ? customerMarker : mechanicMarker;
+          const markerKey = userRole as 'customer' | 'mechanic';
           const color = userRole === 'customer' ? '#3b82f6' : '#ef4444';
           const label = userRole === 'customer' ? 'Your Location (Customer)' : 'Your Location (Mechanic)';
+          const newPosition: [number, number] = [longitude, latitude];
 
           if (marker.current) {
-            marker.current.setLngLat([longitude, latitude]);
+            // Smooth animation for own marker too
+            const lastPos = lastMarkerPosition.current[markerKey];
+            if (lastPos) {
+              animateMarker(marker.current, lastPos, newPosition, 2000);
+            } else {
+              marker.current.setLngLat(newPosition);
+            }
           } else {
             marker.current = new mapboxgl.Marker({ color })
-              .setLngLat([longitude, latitude])
+              .setLngLat(newPosition)
               .setPopup(new mapboxgl.Popup().setHTML(`<p class="font-bold">${label}</p>`))
               .addTo(map.current);
           }
+
+          lastMarkerPosition.current[markerKey] = newPosition;
 
           // Fit bounds to show both markers if both exist
           if (customerMarker.current && mechanicMarker.current) {
             const bounds = new mapboxgl.LngLatBounds();
             bounds.extend(customerMarker.current.getLngLat());
             bounds.extend(mechanicMarker.current.getLngLat());
-            map.current.fitBounds(bounds, { padding: 100, maxZoom: 14 });
+            map.current.fitBounds(bounds, { padding: 100, maxZoom: 15 });
           } else {
             map.current.flyTo({ center: [longitude, latitude], zoom: 14 });
           }
@@ -149,7 +208,7 @@ const LiveLocationTracker = ({ serviceRequestId, userRole, userId }: LiveLocatio
       },
       {
         enableHighAccuracy: true,
-        maximumAge: 5000,
+        maximumAge: 3000,
         timeout: 10000,
       }
     );
@@ -202,10 +261,32 @@ const LiveLocationTracker = ({ serviceRequestId, userRole, userId }: LiveLocatio
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/* ETA and Distance Display */}
+        {eta && (
+          <div className="grid grid-cols-2 gap-4 p-4 bg-accent rounded-lg">
+            <div className="flex items-center gap-2">
+              <Clock className="w-5 h-5 text-primary" />
+              <div>
+                <p className="text-sm text-muted-foreground">ETA</p>
+                <p className="text-lg font-bold">{formatDuration(eta.duration)}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Navigation className="w-5 h-5 text-primary" />
+              <div>
+                <p className="text-sm text-muted-foreground">Distance</p>
+                <p className="text-lg font-bold">{formatDistance(eta.distance)}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div ref={mapContainer} className="w-full h-[400px] rounded-lg border shadow-sm" />
+        
         <div className="flex gap-2">
           {!isSharing ? (
             <Button onClick={startSharing} className="w-full">
+              <TrendingUp className="w-4 h-4 mr-2" />
               Start Sharing Location
             </Button>
           ) : (

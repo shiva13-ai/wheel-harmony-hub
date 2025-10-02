@@ -5,9 +5,12 @@ import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, MapPin, Clock, Navigation } from 'lucide-react';
+import { Loader2, MapPin, Clock, Navigation, Power, PowerOff } from 'lucide-react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
+import { useLocationTracking } from '@/hooks/useLocationTracking';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 
 interface ServiceRequest {
   id: string;
@@ -30,12 +33,22 @@ const MechanicDashboard = () => {
   const [mechanicProfile, setMechanicProfile] = useState<any>(null);
   const [requests, setRequests] = useState<ServiceRequest[]>([]);
   const [mechanicLocation, setMechanicLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [isOnline, setIsOnline] = useState(false);
+  const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const mapboxToken = localStorage.getItem('mapbox_token') || '';
 
+  // Continuous location tracking hook
+  const { isTracking, currentLocation } = useLocationTracking({
+    mechanicId: mechanicProfile?.id || '',
+    jobId: activeJobId || undefined,
+    enabled: isOnline && !!mechanicProfile,
+    updateInterval: 4000,
+  });
+
   const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
-    const R = 6371; // Earth's radius in km
+    const R = 6371;
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLon = (lon2 - lon1) * Math.PI / 180;
     const a = 
@@ -45,6 +58,31 @@ const MechanicDashboard = () => {
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     return R * c;
   };
+
+  // Update mechanic status when online/offline changes
+  useEffect(() => {
+    const updateMechanicStatus = async () => {
+      if (!mechanicProfile) return;
+
+      const { error } = await supabase
+        .from('mechanic_profiles')
+        .update({ status: isOnline ? 'online' : 'offline' })
+        .eq('id', mechanicProfile.id);
+
+      if (error) {
+        console.error('Error updating mechanic status:', error);
+      }
+    };
+
+    updateMechanicStatus();
+  }, [isOnline, mechanicProfile]);
+
+  // Update mechanic location from tracking hook
+  useEffect(() => {
+    if (currentLocation) {
+      setMechanicLocation(currentLocation);
+    }
+  }, [currentLocation]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -73,6 +111,19 @@ const MechanicDashboard = () => {
         }
 
         setMechanicProfile(profile);
+        setIsOnline(profile.status === 'online');
+
+        // Check for active job
+        const { data: activeJob } = await supabase
+          .from('service_requests')
+          .select('id')
+          .eq('assigned_mechanic_id', profile.id)
+          .in('status', ['assigned', 'in_progress'])
+          .maybeSingle();
+
+        if (activeJob) {
+          setActiveJobId(activeJob.id);
+        }
 
         // Get mechanic's current location
         if (navigator.geolocation) {
@@ -202,6 +253,8 @@ const MechanicDashboard = () => {
   }, [mapboxToken, mechanicLocation, requests]);
 
   const handleAcceptRequest = async (requestId: string) => {
+    if (!mechanicProfile) return;
+
     try {
       const { error } = await supabase
         .from('service_requests')
@@ -213,9 +266,18 @@ const MechanicDashboard = () => {
 
       if (error) throw error;
 
+      setActiveJobId(requestId);
+      setIsOnline(true);
+
+      // Update mechanic status to busy
+      await supabase
+        .from('mechanic_profiles')
+        .update({ status: 'busy' })
+        .eq('id', mechanicProfile.id);
+
       toast({
         title: 'Request Accepted',
-        description: 'You can now track the customer location',
+        description: 'Your location will be shared with the customer',
       });
 
       navigate(`/track/${requestId}`);
@@ -261,10 +323,43 @@ const MechanicDashboard = () => {
               Service Radius: {mechanicProfile?.service_radius || 50} km
             </p>
           </div>
-          <Button onClick={() => navigate('/')} variant="outline">
-            ← Back to Home
-          </Button>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 p-3 rounded-lg border">
+              <Switch
+                id="online-status"
+                checked={isOnline}
+                onCheckedChange={setIsOnline}
+              />
+              <Label htmlFor="online-status" className="flex items-center gap-2 cursor-pointer">
+                {isOnline ? (
+                  <>
+                    <Power className="w-4 h-4 text-success" />
+                    <span className="text-success font-medium">Online</span>
+                  </>
+                ) : (
+                  <>
+                    <PowerOff className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-muted-foreground">Offline</span>
+                  </>
+                )}
+              </Label>
+            </div>
+            <Button onClick={() => navigate('/')} variant="outline">
+              ← Back to Home
+            </Button>
+          </div>
         </div>
+
+        {isTracking && (
+          <Card className="mb-6 border-primary">
+            <CardContent className="py-4">
+              <div className="flex items-center gap-2 text-primary">
+                <div className="w-2 h-2 bg-primary rounded-full animate-pulse" />
+                <p className="font-medium">Live location tracking active - Location updated every 4 seconds</p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {mapboxToken && mechanicLocation && (
           <Card className="mb-8">
