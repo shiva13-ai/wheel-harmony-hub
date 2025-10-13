@@ -222,7 +222,12 @@ const LiveLocationTracker = ({ serviceRequestId, userRole, userId }: LiveLocatio
     setIsSharing(false);
   };
 
+  // Auto-start location sharing when component mounts
   useEffect(() => {
+    if (mapboxToken && !isSharing) {
+      startSharing();
+    }
+    
     return () => {
       if (watchId.current !== null) {
         navigator.geolocation.clearWatch(watchId.current);
@@ -284,16 +289,9 @@ const LiveLocationTracker = ({ serviceRequestId, userRole, userId }: LiveLocatio
         <div ref={mapContainer} className="w-full h-[400px] rounded-lg border shadow-sm" />
         
         <div className="flex gap-2">
-          {!isSharing ? (
-            <Button onClick={startSharing} className="w-full">
-              <TrendingUp className="w-4 h-4 mr-2" />
-              Start Sharing Location
-            </Button>
-          ) : (
-            <Button onClick={stopSharing} variant="destructive" className="w-full">
-              Stop Sharing
-            </Button>
-          )}
+          <Button onClick={stopSharing} variant="outline" className="w-full" disabled={!isSharing}>
+            Stop Sharing Location
+          </Button>
         </div>
       </CardContent>
     </Card>
