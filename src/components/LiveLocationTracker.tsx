@@ -1,18 +1,69 @@
 import { useEffect, useState, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import mapboxgl from 'mapbox-gl';
-import 'mapbox-gl/dist/mapbox-gl.css';
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import L, { LatLngTuple } from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Clock, Navigation, TrendingUp } from 'lucide-react';
-import { animateMarker, fetchETA, formatDuration, formatDistance } from '@/utils/mapHelpers';
+import { Clock, Navigation } from 'lucide-react';
+import { fetchETA, formatDuration, formatDistance } from '@/utils/mapHelpers';
+
+// Fix default icon issue with Leaflet
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+});
+
+// Custom marker icons
+const blueIcon = new L.Icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
+});
+
+const redIcon = new L.Icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
+});
 
 interface LiveLocationTrackerProps {
   serviceRequestId: string;
   userRole: 'customer' | 'mechanic';
   userId: string;
+}
+
+function MapBoundsUpdater({ 
+  customerPosition, 
+  mechanicPosition 
+}: { 
+  customerPosition: LatLngTuple | null;
+  mechanicPosition: LatLngTuple | null;
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (customerPosition && mechanicPosition) {
+      const bounds = L.latLngBounds([customerPosition, mechanicPosition]);
+      map.fitBounds(bounds, { padding: [100, 100], maxZoom: 15 });
+    } else if (customerPosition) {
+      map.flyTo(customerPosition, 14);
+    } else if (mechanicPosition) {
+      map.flyTo(mechanicPosition, 14);
+    }
+  }, [customerPosition, mechanicPosition, map]);
+
+  return null;
 }
 
 const LiveLocationTracker = ({ serviceRequestId, userRole, userId }: LiveLocationTrackerProps) => {
@@ -21,43 +72,29 @@ const LiveLocationTracker = ({ serviceRequestId, userRole, userId }: LiveLocatio
   const [otherUserLocation, setOtherUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [eta, setEta] = useState<{ duration: number; distance: number } | null>(null);
   const [myLocation, setMyLocation] = useState<{ lat: number; lng: number } | null>(null);
-  const mapContainer = useRef<HTMLDivElement>(null);
-  const map = useRef<mapboxgl.Map | null>(null);
-  const customerMarker = useRef<mapboxgl.Marker | null>(null);
-  const mechanicMarker = useRef<mapboxgl.Marker | null>(null);
   const watchId = useRef<number | null>(null);
   const etaInterval = useRef<NodeJS.Timeout | null>(null);
-  const lastMarkerPosition = useRef<{ customer?: [number, number]; mechanic?: [number, number] }>({});
-  const mapboxToken = localStorage.getItem('mapbox_token') || '';
 
-  useEffect(() => {
-    if (!mapContainer.current || !mapboxToken) return;
+  const customerPosition: LatLngTuple | null = 
+    userRole === 'customer' && myLocation 
+      ? [myLocation.lat, myLocation.lng]
+      : otherUserLocation && userRole === 'mechanic'
+      ? [otherUserLocation.lat, otherUserLocation.lng]
+      : null;
 
-    mapboxgl.accessToken = mapboxToken;
-
-    map.current = new mapboxgl.Map({
-      container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/streets-v12',
-      center: [77.2090, 28.6139],
-      zoom: 12,
-    });
-
-    map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
-
-    return () => {
-      map.current?.remove();
-    };
-  }, [mapboxToken]);
+  const mechanicPosition: LatLngTuple | null =
+    userRole === 'mechanic' && myLocation
+      ? [myLocation.lat, myLocation.lng]
+      : otherUserLocation && userRole === 'customer'
+      ? [otherUserLocation.lat, otherUserLocation.lng]
+      : null;
 
   // Calculate ETA periodically
   useEffect(() => {
     const calculateETA = async () => {
-      if (!myLocation || !otherUserLocation || !mapboxToken) return;
+      if (!myLocation || !otherUserLocation) return;
 
-      // For customer: mechanic location to customer location
-      // For mechanic: mechanic location to customer location
       const result = await fetchETA(
-        mapboxToken,
         userRole === 'customer' ? otherUserLocation.lng : myLocation.lng,
         userRole === 'customer' ? otherUserLocation.lat : myLocation.lat,
         userRole === 'customer' ? myLocation.lng : otherUserLocation.lng,
@@ -71,7 +108,6 @@ const LiveLocationTracker = ({ serviceRequestId, userRole, userId }: LiveLocatio
 
     if (myLocation && otherUserLocation) {
       calculateETA();
-      // Update ETA every 15 seconds
       etaInterval.current = setInterval(calculateETA, 15000);
     }
 
@@ -80,7 +116,7 @@ const LiveLocationTracker = ({ serviceRequestId, userRole, userId }: LiveLocatio
         clearInterval(etaInterval.current);
       }
     };
-  }, [myLocation, otherUserLocation, mapboxToken, userRole]);
+  }, [myLocation, otherUserLocation, userRole]);
 
   useEffect(() => {
     const channel = supabase.channel(`location:${serviceRequestId}`)
@@ -89,41 +125,8 @@ const LiveLocationTracker = ({ serviceRequestId, userRole, userId }: LiveLocatio
         { event: 'location_update' },
         (payload) => {
           if (payload.payload.userId !== userId) {
-            const { lat, lng, role } = payload.payload;
+            const { lat, lng } = payload.payload;
             setOtherUserLocation({ lat, lng });
-
-            if (map.current) {
-              const marker = role === 'customer' ? customerMarker : mechanicMarker;
-              const markerKey = role as 'customer' | 'mechanic';
-              const color = role === 'customer' ? '#3b82f6' : '#ef4444';
-              const label = role === 'customer' ? 'Customer Location' : 'Mechanic Location';
-              const newPosition: [number, number] = [lng, lat];
-
-              if (marker.current) {
-                // Smooth animation from last position to new position
-                const lastPos = lastMarkerPosition.current[markerKey];
-                if (lastPos) {
-                  animateMarker(marker.current, lastPos, newPosition, 2000);
-                } else {
-                  marker.current.setLngLat(newPosition);
-                }
-              } else {
-                marker.current = new mapboxgl.Marker({ color })
-                  .setLngLat(newPosition)
-                  .setPopup(new mapboxgl.Popup().setHTML(`<p class="font-bold">${label}</p>`))
-                  .addTo(map.current);
-              }
-
-              lastMarkerPosition.current[markerKey] = newPosition;
-
-              // Fit bounds to show both markers if both exist
-              if (customerMarker.current && mechanicMarker.current) {
-                const bounds = new mapboxgl.LngLatBounds();
-                bounds.extend(customerMarker.current.getLngLat());
-                bounds.extend(mechanicMarker.current.getLngLat());
-                map.current.fitBounds(bounds, { padding: 100, maxZoom: 15 });
-              }
-            }
           }
         }
       )
@@ -161,41 +164,6 @@ const LiveLocationTracker = ({ serviceRequestId, userRole, userId }: LiveLocatio
           },
         });
 
-        if (map.current) {
-          const marker = userRole === 'customer' ? customerMarker : mechanicMarker;
-          const markerKey = userRole as 'customer' | 'mechanic';
-          const color = userRole === 'customer' ? '#3b82f6' : '#ef4444';
-          const label = userRole === 'customer' ? 'Your Location (Customer)' : 'Your Location (Mechanic)';
-          const newPosition: [number, number] = [longitude, latitude];
-
-          if (marker.current) {
-            // Smooth animation for own marker too
-            const lastPos = lastMarkerPosition.current[markerKey];
-            if (lastPos) {
-              animateMarker(marker.current, lastPos, newPosition, 2000);
-            } else {
-              marker.current.setLngLat(newPosition);
-            }
-          } else {
-            marker.current = new mapboxgl.Marker({ color })
-              .setLngLat(newPosition)
-              .setPopup(new mapboxgl.Popup().setHTML(`<p class="font-bold">${label}</p>`))
-              .addTo(map.current);
-          }
-
-          lastMarkerPosition.current[markerKey] = newPosition;
-
-          // Fit bounds to show both markers if both exist
-          if (customerMarker.current && mechanicMarker.current) {
-            const bounds = new mapboxgl.LngLatBounds();
-            bounds.extend(customerMarker.current.getLngLat());
-            bounds.extend(mechanicMarker.current.getLngLat());
-            map.current.fitBounds(bounds, { padding: 100, maxZoom: 15 });
-          } else {
-            map.current.flyTo({ center: [longitude, latitude], zoom: 14 });
-          }
-        }
-
         setIsSharing(true);
       },
       (error) => {
@@ -224,7 +192,7 @@ const LiveLocationTracker = ({ serviceRequestId, userRole, userId }: LiveLocatio
 
   // Auto-start location sharing when component mounts
   useEffect(() => {
-    if (mapboxToken && !isSharing) {
+    if (!isSharing) {
       startSharing();
     }
     
@@ -235,16 +203,7 @@ const LiveLocationTracker = ({ serviceRequestId, userRole, userId }: LiveLocatio
     };
   }, []);
 
-  if (!mapboxToken) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Live Location Tracking</CardTitle>
-          <CardDescription>Please set up Mapbox token first</CardDescription>
-        </CardHeader>
-      </Card>
-    );
-  }
+  const defaultCenter: LatLngTuple = [28.6139, 77.2090];
 
   return (
     <Card>
@@ -286,7 +245,40 @@ const LiveLocationTracker = ({ serviceRequestId, userRole, userId }: LiveLocatio
           </div>
         )}
 
-        <div ref={mapContainer} className="w-full h-[400px] rounded-lg border shadow-sm" />
+        <div className="w-full h-[400px] rounded-lg border shadow-sm overflow-hidden">
+          <MapContainer
+            center={defaultCenter}
+            zoom={12}
+            style={{ height: '100%', width: '100%' }}
+            zoomControl={true}
+          >
+            <TileLayer
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            />
+            <MapBoundsUpdater 
+              customerPosition={customerPosition}
+              mechanicPosition={mechanicPosition}
+            />
+            {customerPosition && (
+              <Marker position={customerPosition} icon={blueIcon}>
+                <Popup>
+                  <p className="font-bold">
+                    {userRole === 'customer' ? 'Your Location (Customer)' : 'Customer Location'}
+                  </p>
+                </Popup>
+              </Marker>
+            )}
+            {mechanicPosition && (
+              <Marker position={mechanicPosition} icon={redIcon}>
+                <Popup>
+                  <p className="font-bold">
+                    {userRole === 'mechanic' ? 'Your Location (Mechanic)' : 'Mechanic Location'}
+                  </p>
+                </Popup>
+              </Marker>
+            )}
+          </MapContainer>
+        </div>
         
         <div className="flex gap-2">
           <Button onClick={stopSharing} variant="outline" className="w-full" disabled={!isSharing}>

@@ -6,8 +6,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, MapPin, Clock, Navigation, Power, PowerOff } from 'lucide-react';
-import mapboxgl from 'mapbox-gl';
-import 'mapbox-gl/dist/mapbox-gl.css';
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import L, { LatLngTuple } from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import { useLocationTracking } from '@/hooks/useLocationTracking';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
@@ -35,9 +36,7 @@ const MechanicDashboard = () => {
   const [mechanicLocation, setMechanicLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [isOnline, setIsOnline] = useState(false);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
-  const mapContainer = useRef<HTMLDivElement>(null);
-  const map = useRef<mapboxgl.Map | null>(null);
-  const mapboxToken = localStorage.getItem('mapbox_token') || '';
+  const [mapCenter, setMapCenter] = useState<LatLngTuple>([28.6139, 77.2090]);
 
   // Continuous location tracking hook
   const { isTracking, currentLocation } = useLocationTracking({
@@ -81,6 +80,8 @@ const MechanicDashboard = () => {
   useEffect(() => {
     if (currentLocation) {
       setMechanicLocation(currentLocation);
+      const newCenter: LatLngTuple = [currentLocation.lat, currentLocation.lng];
+      setMapCenter(newCenter);
     }
   }, [currentLocation]);
 
@@ -127,10 +128,12 @@ const MechanicDashboard = () => {
 
         // Get mechanic's current location
         if (navigator.geolocation) {
-          navigator.geolocation.getCurrentPosition(
+            navigator.geolocation.getCurrentPosition(
             async (position) => {
               const { latitude, longitude } = position.coords;
               setMechanicLocation({ lat: latitude, lng: longitude });
+              const newCenter: LatLngTuple = [latitude, longitude];
+              setMapCenter(newCenter);
 
               // Update mechanic location in database
               await supabase
@@ -209,48 +212,34 @@ const MechanicDashboard = () => {
     };
   }, [navigate, toast]);
 
+  // Fix Leaflet default icon issue
   useEffect(() => {
-    if (!mapContainer.current || !mapboxToken || !mechanicLocation) return;
-
-    mapboxgl.accessToken = mapboxToken;
-
-    map.current = new mapboxgl.Map({
-      container: mapContainer.current,
-      style: 'mapbox://styles/mapbox/streets-v12',
-      center: [mechanicLocation.lng, mechanicLocation.lat],
-      zoom: 12,
+    delete (L.Icon.Default.prototype as any)._getIconUrl;
+    L.Icon.Default.mergeOptions({
+      iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
+      iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+      shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
     });
+  }, []);
 
-    map.current.addControl(new mapboxgl.NavigationControl(), 'top-right');
+  // Custom marker icons
+  const redIcon = new L.Icon({
+    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowSize: [41, 41]
+  });
 
-    // Add mechanic marker
-    new mapboxgl.Marker({ color: '#ef4444' })
-      .setLngLat([mechanicLocation.lng, mechanicLocation.lat])
-      .setPopup(new mapboxgl.Popup().setHTML('<p>Your Location</p>'))
-      .addTo(map.current);
-
-    // Add request markers
-    requests.forEach((request) => {
-      if (request.location_lat && request.location_lng) {
-        new mapboxgl.Marker({ color: '#3b82f6' })
-          .setLngLat([request.location_lng, request.location_lat])
-          .setPopup(
-            new mapboxgl.Popup().setHTML(
-              `<div>
-                <p class="font-bold">${request.service_type}</p>
-                <p>${request.vehicle_type}</p>
-                <p class="text-sm">${request.distance?.toFixed(1)} km away</p>
-              </div>`
-            )
-          )
-          .addTo(map.current!);
-      }
-    });
-
-    return () => {
-      map.current?.remove();
-    };
-  }, [mapboxToken, mechanicLocation, requests]);
+  const blueIcon = new L.Icon({
+    iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowSize: [41, 41]
+  });
 
   const handleAcceptRequest = async (requestId: string) => {
     if (!mechanicProfile) return;
@@ -361,7 +350,7 @@ const MechanicDashboard = () => {
           </Card>
         )}
 
-        {mapboxToken && mechanicLocation && (
+        {mechanicLocation && (
           <Card className="mb-8">
             <CardHeader>
               <CardTitle>Nearby Service Requests</CardTitle>
@@ -370,7 +359,40 @@ const MechanicDashboard = () => {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div ref={mapContainer} className="w-full h-[400px] rounded-lg border shadow-sm" />
+              <div className="w-full h-[400px] rounded-lg border shadow-sm overflow-hidden">
+                <MapContainer
+                  center={mapCenter}
+                  zoom={12}
+                  style={{ height: '100%', width: '100%' }}
+                  zoomControl={true}
+                >
+                  <TileLayer
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  />
+                  {/* Mechanic marker */}
+                  <Marker position={[mechanicLocation.lat, mechanicLocation.lng] as LatLngTuple} icon={redIcon}>
+                    <Popup>Your Location</Popup>
+                  </Marker>
+                  {/* Request markers */}
+                  {requests.map((request) => 
+                    request.location_lat && request.location_lng ? (
+                      <Marker 
+                        key={request.id}
+                        position={[request.location_lat, request.location_lng] as LatLngTuple} 
+                        icon={blueIcon}
+                      >
+                        <Popup>
+                          <div>
+                            <p className="font-bold">{request.service_type}</p>
+                            <p>{request.vehicle_type}</p>
+                            <p className="text-sm">{request.distance?.toFixed(1)} km away</p>
+                          </div>
+                        </Popup>
+                      </Marker>
+                    ) : null
+                  )}
+                </MapContainer>
+              </div>
             </CardContent>
           </Card>
         )}

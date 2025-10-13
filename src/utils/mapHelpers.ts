@@ -1,92 +1,66 @@
-import mapboxgl from 'mapbox-gl';
+import L from 'leaflet';
 
-// Interpolate between two points for smooth marker movement
-export const interpolateCoordinates = (
+// Animate marker smoothly between positions
+export const animateMarker = (
+  marker: L.Marker,
   start: [number, number],
   end: [number, number],
-  factor: number
-): [number, number] => {
-  return [
-    start[0] + (end[0] - start[0]) * factor,
-    start[1] + (end[1] - start[1]) * factor,
-  ];
-};
-
-// Animate marker movement smoothly
-export const animateMarker = (
-  marker: mapboxgl.Marker,
-  fromLngLat: [number, number],
-  toLngLat: [number, number],
-  duration: number = 2000
+  duration: number
 ) => {
   const startTime = Date.now();
+  const startLat = start[1];
+  const startLng = start[0];
+  const endLat = end[1];
+  const endLng = end[0];
 
   const animate = () => {
-    const elapsed = Date.now() - startTime;
-    const factor = Math.min(elapsed / duration, 1);
+    const now = Date.now();
+    const elapsed = now - startTime;
+    const progress = Math.min(elapsed / duration, 1);
 
-    // Easing function for smooth movement
-    const easedFactor = easeInOutQuad(factor);
-    const currentLngLat = interpolateCoordinates(fromLngLat, toLngLat, easedFactor);
+    // Easing function for smooth animation
+    const easeProgress = progress < 0.5
+      ? 2 * progress * progress
+      : 1 - Math.pow(-2 * progress + 2, 2) / 2;
 
-    marker.setLngLat(currentLngLat);
+    const currentLat = startLat + (endLat - startLat) * easeProgress;
+    const currentLng = startLng + (endLng - startLng) * easeProgress;
 
-    if (factor < 1) {
+    marker.setLatLng([currentLat, currentLng]);
+
+    if (progress < 1) {
       requestAnimationFrame(animate);
     }
   };
 
-  animate();
+  requestAnimationFrame(animate);
 };
 
-// Easing function for smooth animations
-const easeInOutQuad = (t: number): number => {
-  return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
-};
-
-// Calculate distance between two coordinates in kilometers
-export const calculateDistance = (
-  lat1: number,
-  lng1: number,
-  lat2: number,
-  lng2: number
-): number => {
-  const R = 6371; // Earth's radius in km
-  const dLat = toRad(lat2 - lat1);
-  const dLng = toRad(lng2 - lng1);
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-};
-
-const toRad = (degrees: number): number => {
-  return (degrees * Math.PI) / 180;
-};
-
-// Fetch ETA from Mapbox Directions API
+// Fetch ETA using OSRM (Open Source Routing Machine)
 export const fetchETA = async (
-  mapboxToken: string,
-  startLng: number,
-  startLat: number,
-  endLng: number,
-  endLat: number
+  fromLng: number,
+  fromLat: number,
+  toLng: number,
+  toLat: number
 ): Promise<{ duration: number; distance: number } | null> => {
   try {
-    const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${startLng},${startLat};${endLng},${endLat}?access_token=${mapboxToken}&geometries=geojson`;
+    const response = await fetch(
+      `https://router.project-osrm.org/route/v1/driving/${fromLng},${fromLat};${toLng},${toLat}?overview=false`
+    );
     
-    const response = await fetch(url);
-    const data = await response.json();
-
-    if (data.routes && data.routes.length > 0) {
-      const route = data.routes[0];
-      return {
-        duration: route.duration, // in seconds
-        distance: route.distance, // in meters
-      };
+    if (!response.ok) {
+      throw new Error('Failed to fetch route');
     }
 
+    const data = await response.json();
+    
+    if (data.routes && data.routes.length > 0) {
+      return {
+        duration: data.routes[0].duration, // in seconds
+        distance: data.routes[0].distance, // in meters
+      };
+    }
+    
     return null;
   } catch (error) {
     console.error('Error fetching ETA:', error);
@@ -94,24 +68,52 @@ export const fetchETA = async (
   }
 };
 
-// Format seconds into human-readable time
+// Format duration in seconds to readable string
 export const formatDuration = (seconds: number): string => {
   if (seconds < 60) {
-    return '< 1 min';
-  }
-  const minutes = Math.round(seconds / 60);
-  if (minutes < 60) {
+    return `${Math.round(seconds)}s`;
+  } else if (seconds < 3600) {
+    const minutes = Math.floor(seconds / 60);
     return `${minutes} min`;
+  } else {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    return `${hours}h ${minutes}m`;
   }
-  const hours = Math.floor(minutes / 60);
-  const remainingMinutes = minutes % 60;
-  return `${hours}h ${remainingMinutes}m`;
 };
 
-// Format distance into human-readable format
+// Format distance in meters to readable string
 export const formatDistance = (meters: number): string => {
   if (meters < 1000) {
     return `${Math.round(meters)} m`;
+  } else {
+    return `${(meters / 1000).toFixed(1)} km`;
   }
-  return `${(meters / 1000).toFixed(1)} km`;
+};
+
+// Reverse geocode using Nominatim (OpenStreetMap)
+export const reverseGeocode = async (
+  lat: number,
+  lng: number
+): Promise<string> => {
+  try {
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`,
+      {
+        headers: {
+          'Accept-Language': 'en',
+        },
+      }
+    );
+    
+    if (!response.ok) {
+      throw new Error('Failed to geocode');
+    }
+
+    const data = await response.json();
+    return data.display_name || `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+  } catch (error) {
+    console.error('Error reverse geocoding:', error);
+    return `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+  }
 };
